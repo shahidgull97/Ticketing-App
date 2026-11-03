@@ -69,12 +69,15 @@ Real-time KPI summary strip, Open/Closed tabs, debounced issue search, role-scop
 
 ## Local development with Docker (Recommended)
 
-Prerequisites: **Docker Desktop** (with Docker Compose v2).
+Prerequisites: **Docker Desktop** (with Docker Compose v2) and **Git**.
 
-### 1. Configure environment variables
-Copy the example environment file and set your local secrets (or keep the defaults for local evaluation):
+### 1. Clone the repository & configure environment variables
+Copy the example environment file (it already contains working local defaults so `docker compose up --build` works immediately after copying, or you can customize the values):
 
 ```bash
+git clone <repository-url>
+cd Ticketing-App
+
 # macOS / Linux
 cp .env.example .env
 
