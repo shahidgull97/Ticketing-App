@@ -5,46 +5,144 @@ Full-stack take-home: a role-based facility ticketing system (React + Material U
 It implements the wireframe's two flows - **1. Ticket Creation** and **2. Ticket Handling** (first two handling steps) - for four seeded roles: **Client**, **Facility Manager**, **Department POC** and **Worker/Technician**.
 
 ## Contents
-1. [Quick start (Docker)](#quick-start-docker)
-2. [Local development without Docker](#local-development-without-docker)
-3. [Tests](#tests)
-4. [Seeded accounts](#seeded-accounts)
-5. [Functional overview and wireframe mapping](#functional-overview-and-wireframe-mapping)
-6. [API endpoints](#api-endpoints)
-7. [Data model](#data-model)
-8. [Architecture decisions](#architecture-decisions)
-9. [Engineering depth items](#engineering-depth-items-all-four-implemented)
-10. [Celery and Redis design](#celery-and-redis-design)
-11. [Assumptions](#assumptions)
-12. [Limitations and what I would improve](#limitations-and-what-i-would-improve)
-13. [AWS deployment note](#aws-deployment-note)
+1. [Application screenshots](#application-screenshots)
+2. [Local development with Docker (Recommended)](#local-development-with-docker-recommended)
+3. [Local development without Docker](#local-development-without-docker)
+4. [Tests](#tests)
+5. [Seeded accounts](#seeded-accounts)
+6. [Functional overview and wireframe mapping](#functional-overview-and-wireframe-mapping)
+7. [API endpoints](#api-endpoints)
+8. [Data model](#data-model)
+9. [Architecture decisions](#architecture-decisions)
+10. [Engineering depth items](#engineering-depth-items-all-four-implemented)
+11. [Celery and Redis design](#celery-and-redis-design)
+12. [Assumptions](#assumptions)
+13. [Limitations and what I would improve](#limitations-and-what-i-would-improve)
+14. [AWS deployment note](#aws-deployment-note)
 
 ---
 
-## Quick start (Docker)
+## Application screenshots
 
-Prerequisites: Docker Desktop (Compose v2).
+### 1. Authentication & Quick Demo Role Switcher
+Split-screen login with one-click demo account cards grouped by role (**Client**, **Facility Manager**, **Department POC**, and **Worker/Technician**), performing real JWT authentication (`POST /api/auth/token/`).
+
+![Login Page](docs/screenshots/login.png)
+
+---
+
+### 2. Ticket Dashboard — 3 Layout Views (List, 2-Column Grid, 4-Column Kanban Board)
+Real-time KPI summary strip, Open/Closed tabs, debounced issue search, role-scoped filters (Client, Department, Facility Manager, Status), sorting, and URL-synced view switcher.
+
+#### List View
+![Tickets Dashboard - List View](docs/screenshots/listview.png)
+
+#### 2-Column Grid View & 4-Column Status Kanban Board
+| 2-Column Grid View | 4-Column Kanban Board View |
+|---|---|
+| ![Grid View](docs/screenshots/gridview.png) | ![Kanban Board View](docs/screenshots/Boardview.png) |
+
+---
+
+### 3. Flow 1: Ticket Creation & Async Celery Notifications
+* **Create New Ticket Modal**: Dynamic **Quick Issues** aggregated from the client's historical tickets, single-department issue validation, multi-floor selection (with *All Floors* toggle), and duplicate-submission guard.
+* **Live Notification Bell**: Displays asynchronous notifications processed by the **Celery + Redis** worker with unread count badge, *Mark all read*, and one-click navigation to the ticket.
+
+| Create New Ticket Modal | Celery Worker Notification Bell |
+|---|---|
+| ![Create Ticket Modal](docs/screenshots/createTicket.png) | ![Notification Bell Popover](docs/screenshots/notification.png) |
+
+---
+
+### 4. Flow 2: Role-Based Ticket Handling Workspace (All 4 Roles)
+2-column Jira-style workspace with the issue description, tabbed audit/comment timeline, and sticky comment composer on the left, paired with a role-specific workflow action panel on the right:
+
+| Department POC View (*Assign Worker* / *Change Department*) | Field Technician / Worker View (*Submit Assessment*) |
+|---|---|
+| ![Department POC Detail View](docs/screenshots/detailPagePoc.png) | ![Worker Detail View](docs/screenshots/detailPageWorker.png) |
+
+| Client View (*Mark Resolved* CTA) | Facility Manager View (*Property Oversight & Comments*) |
+|---|---|
+| ![Client Detail View](docs/screenshots/detailPageClient.png) | ![Facility Manager Detail View](docs/screenshots/detailPageFacility.png) |
+
+---
+
+## Local development with Docker (Recommended)
+
+Prerequisites: **Docker Desktop** (with Docker Compose v2).
+
+### 1. Configure environment variables
+Copy the example environment file and set your local secrets (or keep the defaults for local evaluation):
 
 ```bash
-cp .env.example .env          # Windows PowerShell: Copy-Item .env.example .env
-# edit .env: set POSTGRES_PASSWORD, DJANGO_SECRET_KEY, DEMO_PASSWORD
-docker compose up --build
+# macOS / Linux
+cp .env.example .env
+
+# Windows PowerShell
+Copy-Item .env.example .env
 ```
 
+Key variables in `.env`:
+* `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` — PostgreSQL 16 database credentials
+* `DJANGO_SECRET_KEY` — Django signing key
+* `DEMO_MODE=true` & `DEMO_PASSWORD` — Password assigned to all 14 seeded demo users and enables the in-app Account Switcher
+* `SEED_ON_START=1` — Automatically runs migrations and seeds demo data when the `web` container starts
+
+### 2. Build and start all 5 containers
+```bash
+# Start in the foreground (streams logs from all services)
+docker compose up --build
+
+# Or start in detached (background) mode
+docker compose up -d --build
+```
+
+Docker Compose starts 5 services in dependency order (with health checks on PostgreSQL and Redis):
+1. `db` — **PostgreSQL 16** (`postgres:16-alpine`) with persistent named volume `pgdata`
+2. `redis` — **Redis 7** (`redis:7-alpine`) broker and result backend
+3. `web` — **Django 5.2 + Gunicorn** API server (automatically runs `migrate` and `seed_demo` on startup)
+4. `worker` — **Celery 5.4 worker** processing asynchronous ticket notifications
+5. `frontend` — **React 18 + Vite** production build served by **Nginx** (proxies `/api/*` and `/admin/*` to `web:8000`)
+
+### 3. Access the application
 | Service | URL |
 |---|---|
-| Web app (nginx -> React build, proxies `/api`) | http://localhost:3000 |
-| API (Django/gunicorn) | http://localhost:8000/api/ |
-| Django admin | http://localhost:8000/admin/ |
+| **Frontend Web App** (Nginx -> React SPA, proxies `/api`) | http://localhost:3000 |
+| **Backend REST API** (Django / Gunicorn) | http://localhost:8000/api/ |
+| **API Health Check** | http://localhost:8000/api/health/ |
+| **Django Admin** | http://localhost:8000/admin/ |
 
-On first start the `web` container applies migrations and loads the demo data (`SEED_ON_START=1`). Re-seed manually:
-
+### 4. Useful Docker development commands
 ```bash
+# Check container health and status
+docker compose ps
+
+# Follow live logs (all services, or just web / worker)
+docker compose logs -f
+docker compose logs -f web worker
+
+# Re-seed demo data from scratch (resets tickets and users)
 docker compose exec web python manage.py seed_demo --reset
+
+# Run database migrations manually after model changes
+docker compose exec web python manage.py makemigrations
+docker compose exec web python manage.py migrate
+
+# Create a Django Admin superuser (Note: set role='FACILITY_MANAGER' or 'CLIENT')
+docker compose exec web python manage.py createsuperuser
+
+# Rebuild and restart a specific service after code changes
+docker compose up -d --build frontend
+docker compose up -d --build web worker
+
+# Stop containers (preserves database volume)
+docker compose down
+
+# Stop containers and wipe database volume for a clean slate
+docker compose down -v
 ```
 
-Services: `db` (PostgreSQL 16), `redis` (7), `web` (Django + gunicorn), `worker` (Celery), `frontend` (nginx).
-`.env.example` contains placeholders only - there are no real credentials in the repo.
+`.env.example` contains placeholders only — no real credentials or `.env` files are committed to the repository.
 
 ## Local development without Docker
 
@@ -79,11 +177,11 @@ Windows PowerShell: use `$env:NAME="value"` instead of `export`.
 ## Tests
 
 ```bash
-# Backend (17 tests) - SQLite + eager Celery so no services are required
+# Backend (18 tests) - SQLite + eager Celery so no services are required
 cd Backend
-USE_SQLITE=1 DJANGO_DEBUG=true CELERY_EAGER=1 python manage.py test
+USE_SQLITE=1 DJANGO_DEBUG=true CELERY_EAGER=1 python manage.py test tickets.tests
 # Same suite against PostgreSQL/Redis (inside compose):
-docker compose exec web python manage.py test
+docker compose exec web python manage.py test tickets.tests
 
 # Frontend (5 tests, Vitest + Testing Library)
 cd Frontend && npm test
@@ -93,7 +191,7 @@ cd Frontend && npm test
 |---|---|
 | API flow / business rule / invalid transition | `tickets/tests/test_workflow.py` (create -> assign -> assess -> resolve, 409 on repeated/invalid transitions, 400 validation, pagination/search/filter/sort, query count) |
 | Authentication / authorization | `tickets/tests/test_auth_permissions.py` (401, JWT login, per-role visibility, 403 for actions, cross-client/department isolation) |
-| Celery task incl. failure / retry | `tickets/tests/test_tasks.py` (idempotent re-run, transient failure retried and delivered once, permanent failure after max retries, missing activity) |
+| Celery task incl. failure / retry & notifications API | `tickets/tests/test_tasks.py` (idempotent re-run, transient failure retried and delivered once, permanent failure after max retries, missing activity, `/api/notifications/` list & mark-read) |
 | Frontend component / interaction | `CreateTicketDialog.test.jsx` (validation, quick-issue autofill, **double-click submits once**), `TicketCard.test.jsx` (card fields, activity filtering) |
 
 ## Seeded accounts
@@ -119,11 +217,11 @@ All seeded users share the password in `DEMO_PASSWORD` (`.env`). Registration / 
 
 | Wireframe | Implementation |
 |---|---|
-| Ticket list with **Open / Closed** tabs, search bar, Filters, Sort, card with title, `Client-Office; floors`, ticket id, status, created-by, current assignee(s), *Action Required*, **View** | `TicketListPage`, `TicketFilters`, `TicketCard` - all state in the URL, server-side pagination (10/page), search (issue text), filters (client, department, facility manager, status), sort (newest / oldest first) |
+| Ticket list with **Open / Closed** tabs, search bar, Filters, Sort, card with title, `Client-Office; floors`, ticket id, status, created-by, current assignee(s), *Action Required*, **View** | `TicketListPage`, `TicketFilters`, `TicketCard`, `TicketBoard` - KPI summary strip, 3 view modes (**List / 2-Col Grid / 4-Col Kanban Board**), all state in the URL, server-side pagination (10/page), search (issue text), filters (client, department, facility manager, status), sort (newest / oldest first) |
 | **Create New Ticket** form (Client\*, Quick Issues, Issue(s)\* multi-select, Floor(s)\*, Description) | `CreateTicketDialog`. *Client* is shown only when the user can create for more than one client. *Floors* only when the office has several floors (single-floor offices are auto-filled). Quick Issues come from the client's own ticket history (aggregation), padded with globally popular issues for new clients |
 | Created by **Client** or **UV internal employees** (Facility Manager / Department POC) | Clients: own clients. FM: clients of the properties they manage. POC: any client. Workers cannot create (403) |
 | Ticket **auto-assigned** to the issue's Department POC; "Unassigned -> POC" history | `services.create_ticket` writes `CREATED` and `AUTO_ASSIGNED` (actor *System*) activities |
-| Detail view: sticky summary + CTA on top, Issue Description, Activity (All / Actions / Comments, event count, History `from -> to`), sticky comment box at the bottom | `TicketDetailPage`, `ActivityTimeline`, `CommentComposer` |
+| Detail view: sticky summary + CTA on top, Issue Description, Activity (All / Actions / Comments, event count, History `from -> to`), sticky comment box at the bottom | `TicketDetailPage`, `ActivityTimeline`, `CommentComposer` - 2-column Jira-style layout on desktop (scrollable issue & activity feed on left, sticky workflow action & people sidebar on right), stacked on mobile |
 | **POC CTAs**: *Assign Worker* (select worker) / *Change Department* (department + forwarding note) | `ActionPanel` -> `POST .../assign-worker/`, `.../change-department/` |
 | **Worker CTA**: *Submit Assessment* -> Fully Resolved / Partially Resolved / Suggest Department-Worker Change | `ActionPanel` -> `POST .../submit-assessment/` (note required for the last two) |
 | **Client CTA**: *Mark Resolved* | `POST .../resolve/` (confirmation dialog) |
@@ -159,6 +257,8 @@ Base path `/api`. JWT bearer auth (`Authorization: Bearer <access>`).
 | `POST /tickets/{id}/submit-assessment/` | `{outcome: FULLY_RESOLVED\|PARTIALLY_RESOLVED\|SUGGEST_CHANGE, note?}` - assigned worker |
 | `POST /tickets/{id}/resolve/` | Creator / client member |
 | `POST /tickets/{id}/comments/` | `{text}` (<= 2000 chars) |
+| `GET /notifications/` | Latest 30 delivered notifications (`results`) + `unread_count` for the signed-in user |
+| `POST /notifications/mark-read/` | `{id?}` - Mark a single notification or all unread notifications as read |
 | `GET /ticket-filters/` | Filter options limited to what the user can see |
 | `GET /clients/`, `/clients/{id}/quick-issues/`, `/issues/`, `/departments/`, `/facility-managers/`, `/workers/` | Lookups |
 
@@ -198,7 +298,7 @@ Ticket(client, department, issues M2M, floors M2M, status, created_by, assigned_
 * **Visibility in the queryset**, so detail and action endpoints get row-level security for free (unauthorised ticket => 404, no existence leak).
 * **Race safety**: each state change runs in `transaction.atomic()` with `select_for_update(of=("self",))`, so two concurrent "assign worker" calls can't both succeed - the second sees the new state and gets 409.
 * **JWT (simplejwt)** - standard auth with refresh; the SPA stores tokens in `localStorage` (trade-off noted below) and refreshes on 401 once.
-* **Frontend**: Vite + React 18 + MUI 6, feature folders (`features/auth`, `features/tickets`), TanStack Query for server state (cache, de-duplication, `keepPreviousData` pagination, mutations write the response straight into the cache so there is no refetch after an action), URL query string as the single source of truth for tab/search/filters/sort/page (shareable, back-button friendly, predictable). Search is debounced (400 ms). Components that matter are memoised (`TicketCard`).
+* **Frontend**: Vite + React 18 + MUI 6, feature folders (`features/auth`, `features/tickets`), Light & Dark theme toggle (`ColorModeProvider` persisted in `localStorage`), in-app `NotificationBell` popover backed by Celery worker outputs, TanStack Query for server state (cache, de-duplication, `keepPreviousData` pagination, mutations write the response straight into the cache so there is no refetch after an action), URL query string as the single source of truth for tab/search/filters/sort/page (shareable, back-button friendly, predictable). Search is debounced (400 ms). Components that matter are memoised (`TicketCard`).
 * **Duplicate-submission protection**: `LoadingButton` (disabled + spinner + `aria-busy`) **and** `useSubmitGuard` (a ref flipped synchronously so even a same-frame double-click is ignored). Covered by a test.
 * **States handled**: loading skeletons/spinners, empty (with/without filters, per tab), success toasts + inline banners, field-level validation from both client and server error envelopes, 401 -> re-login, 403/404 friendly panels, network/5xx with *Retry*.
 * **Accessibility / responsive**: semantic landmarks (`header`, `main`, `section`, `article`, ordered activity list, `time`), skip link, labelled controls, `aria-live` regions for results, `role="alert"` errors, keyboard-operable menus/dialogs; layouts reflow to mobile (full-screen create dialog, stacked filters, icon-only app-bar buttons, sticky regions sized for small screens).
@@ -235,7 +335,7 @@ Ticket(client, department, issues M2M, floors M2M, status, created_by, assigned_
 
 * JWT in `localStorage` is XSS-exposed; production should use `HttpOnly; SameSite` cookies (and CSRF) behind the same origin (nginx already proxies `/api`).
 * Search uses `ILIKE`; add `pg_trgm` GIN index (or full-text search) for large data. Keyset pagination for very deep pages.
-* Notifications are simulated; add an outbox/periodic Celery beat task to re-drive undelivered rows, per-user notification inbox UI and real e-mail/push.
+* External notification delivery (email/SMS/push) is simulated behind `deliver()` while in-app notifications are served live in the `NotificationBell` UI; in production I would connect `deliver()` to SES/SNS and add a periodic Celery beat task to re-drive any undelivered rows.
 * Real-time updates (SSE/WebSocket) for the activity feed instead of cache + refresh.
 * More tests: component tests for the POC/worker action forms and an end-to-end browser test (Playwright); API throttling; OpenAPI schema (drf-spectacular); i18n; frontend code-splitting (bundle is ~670 kB before gzip).
 * Next workflow steps (POC review, reassigning after a "suggest change", reopening) are intentionally out of scope per the brief.
@@ -265,8 +365,9 @@ Backend/
   tickets/         models, services (rules), serializers, views, filters, tasks, seed_demo command, tests
 Frontend/src/
   api/             axios instance (JWT refresh, error normaliser) + endpoint modules
-  components/      layout, shared states, LoadingButton, toast
-  features/auth    context, login, account switcher
-  features/tickets list/filters/card, create dialog, detail, activity, action panel, comments, hooks, tests
+  components/      AppLayout, NotificationBell, StatusChip, shared states, LoadingButton, toast
+  features/auth    AuthContext, LoginPage, AccountSwitcher
+  features/tickets TicketListPage, TicketBoard, TicketFilters, TicketCard, CreateTicketDialog, TicketDetailPage, ActivityTimeline, ActionPanel, CommentComposer, hooks, tests
+docs/screenshots/  10 application screenshots across all roles and views
 docker-compose.yml  .env.example
 ```

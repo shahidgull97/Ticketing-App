@@ -10,10 +10,10 @@ from accounts.views import clients_for_user
 
 from . import services
 from .filters import TicketFilter
-from .models import Issue, Ticket, TicketActivity
+from .models import Issue, Notification, Ticket, TicketActivity
 from .serializers import (
     ActivitySerializer, AssessmentSerializer, AssignWorkerSerializer, ChangeDepartmentSerializer,
-    CommentSerializer, IssueSerializer, TicketCreateSerializer, TicketDetailSerializer, TicketListSerializer,
+    CommentSerializer, IssueSerializer, NotificationSerializer, TicketCreateSerializer, TicketDetailSerializer, TicketListSerializer,
 )
 
 
@@ -143,3 +143,31 @@ class QuickIssueListView(generics.ListAPIView):
 
     def filter_queryset(self, queryset):
         return queryset
+
+
+class NotificationListView(APIView):
+    """Returns recent Celery-delivered notifications for the authenticated user + unread count."""
+
+    def get(self, request):
+        qs = (
+            Notification.objects.filter(recipient=request.user, delivered_at__isnull=False)
+            .select_related("ticket", "activity__actor")
+            .order_by("-created_at")
+        )
+        unread_count = qs.filter(read_at__isnull=True).count()
+        items = qs[:25]
+        return Response({"unread_count": unread_count, "results": NotificationSerializer(items, many=True).data})
+
+
+class NotificationMarkReadView(APIView):
+    """Marks all (or one) of the user's notifications as read."""
+
+    def post(self, request):
+        from django.utils import timezone
+
+        qs = Notification.objects.filter(recipient=request.user, read_at__isnull=True)
+        notif_id = request.data.get("id")
+        if notif_id:
+            qs = qs.filter(pk=notif_id)
+        updated = qs.update(read_at=timezone.now())
+        return Response({"marked_read": updated})

@@ -52,3 +52,19 @@ class NotificationTaskTests(BaseTicketTest):
     def test_missing_activity_is_a_noop(self):
         self.assertEqual(tasks.notify_activity.apply(args=[999999]).get(), 0)
 
+    def test_notifications_api_lists_and_marks_read(self):
+        res = self.api(self.tech_poc).get("/api/notifications/")
+        self.assertEqual(res.status_code, 200)
+        self.assertGreaterEqual(res.data["unread_count"], 1)
+        first_id = res.data["results"][0]["id"]
+
+        mark_one = self.api(self.tech_poc).post("/api/notifications/mark-read/", {"id": first_id}, format="json")
+        self.assertEqual(mark_one.status_code, 200)
+        self.assertEqual(mark_one.data["marked_read"], 1)
+
+        mark_all = self.api(self.tech_poc).post("/api/notifications/mark-read/", {}, format="json")
+        self.assertEqual(mark_all.status_code, 200)
+        after = self.api(self.tech_poc).get("/api/notifications/")
+        self.assertEqual(after.data["unread_count"], 0)
+
+

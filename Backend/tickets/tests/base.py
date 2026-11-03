@@ -1,9 +1,11 @@
+from django.test import override_settings
 from rest_framework.test import APIClient, APITestCase
 
 from accounts.models import Building, Client, Department, Floor, User
 from tickets.models import Issue
 
 
+@override_settings(CELERY_TASK_ALWAYS_EAGER=True)
 class BaseTicketTest(APITestCase):
     """Small deterministic world: 2 departments, 2 properties, 2 clients, one user per role."""
 

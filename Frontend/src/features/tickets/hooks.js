@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { lookupApi, ticketsApi } from '../../api/endpoints';
+import { lookupApi, notificationsApi, ticketsApi } from '../../api/endpoints';
 
 export const PAGE_SIZE = 10;
 
@@ -7,6 +7,23 @@ export const ticketKeys = {
   list: (params) => ['tickets', 'list', params],
   detail: (id) => ['tickets', 'detail', String(id)],
 };
+
+export const useNotifications = () =>
+  useQuery({
+    queryKey: ['notifications'],
+    queryFn: notificationsApi.list,
+    refetchInterval: 15_000,
+  });
+
+export function useMarkNotificationsRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => notificationsApi.markRead(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
+}
 
 export const useTickets = (params) =>
   useQuery({
@@ -36,6 +53,7 @@ function useTicketMutation(id, fn) {
     onSuccess: (ticket) => {
       qc.setQueryData(ticketKeys.detail(id), ticket);
       qc.invalidateQueries({ queryKey: ['tickets', 'list'] });
+      qc.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 }
@@ -51,6 +69,7 @@ export function useAddComment(id) {
     mutationFn: (text) => ticketsApi.comment(id, text),
     onSuccess: (activity) => {
       qc.setQueryData(ticketKeys.detail(id), (old) => (old ? { ...old, activities: [...old.activities, activity] } : old));
+      qc.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 }
@@ -64,6 +83,7 @@ export function useCreateTicket() {
       qc.invalidateQueries({ queryKey: ['tickets', 'list'] });
       qc.invalidateQueries({ queryKey: ['lookups', 'quick-issues'] });
       qc.invalidateQueries({ queryKey: ['lookups', 'filters'] });
+      qc.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 }

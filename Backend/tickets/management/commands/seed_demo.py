@@ -159,6 +159,13 @@ class Command(BaseCommand):
                 last = TicketActivity.objects.filter(ticket=ticket).order_by("-created_at").first()
                 Ticket.objects.filter(pk=ticket.pk).update(resolved_at=last.created_at)
 
+        # Populate sample delivered notifications from the most recent activities so the
+        # Notification Bell dropdown has realistic alerts across all demo roles immediately.
+        from tickets.tasks import notify_activity
+        recent_activities = list(TicketActivity.objects.order_by("-created_at")[:30])
+        for act in reversed(recent_activities):
+            notify_activity(act.pk)
+
         self.stdout.write(self.style.SUCCESS(f"Seeded {Ticket.objects.count()} tickets and {User.objects.count()} users."))
         self.stdout.write(f"All seeded accounts use the password from DEMO_PASSWORD. Usernames: {', '.join(u[0] for u in PEOPLE)}")
 

@@ -5,7 +5,7 @@ from accounts.serializers import UserBriefSerializer
 from accounts.views import clients_for_user
 
 from . import services
-from .models import Issue, Ticket, TicketActivity
+from .models import Issue, Notification, Ticket, TicketActivity
 
 
 class IssueSerializer(serializers.ModelSerializer):
@@ -157,3 +157,34 @@ class AssessmentSerializer(serializers.Serializer):
         choices=Ticket.Outcome.choices, error_messages={"required": "Choose one of the assessment options.", "invalid_choice": "Choose one of the assessment options."}
     )
     note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    ticket_id = serializers.IntegerField(read_only=True)
+    ticket_number = serializers.CharField(source="ticket.number", read_only=True)
+    ticket_title = serializers.CharField(source="ticket.issue_text", read_only=True)
+    actor_name = serializers.SerializerMethodField()
+    activity_type = serializers.CharField(source="activity.type", read_only=True)
+    is_read = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Notification
+        fields = (
+            "id",
+            "ticket_id",
+            "ticket_number",
+            "ticket_title",
+            "activity_type",
+            "actor_name",
+            "message",
+            "created_at",
+            "delivered_at",
+            "is_read",
+        )
+
+    def get_actor_name(self, obj):
+        actor = obj.activity.actor
+        return actor.display_name if actor else "System"
+
+    def get_is_read(self, obj):
+        return obj.read_at is not None

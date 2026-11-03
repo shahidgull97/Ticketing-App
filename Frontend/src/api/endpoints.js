@@ -28,3 +28,9 @@ export const lookupApi = {
   workers: () => data(http.get('/workers/')),
 };
 
+export const notificationsApi = {
+  list: () => data(http.get('/notifications/')),
+  markRead: (id) => data(http.post('/notifications/mark-read/', id ? { id } : {})),
+};
+
+

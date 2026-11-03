@@ -7,6 +7,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import AccountSwitcher from '../features/auth/AccountSwitcher';
+import NotificationBell from './NotificationBell';
 import { useAuth } from '../features/auth/AuthContext';
 import { useColorMode } from '../theme';
 import { initials } from '../utils/format';
@@ -133,6 +134,8 @@ export default function AppLayout() {
                 </Typography>
               </Box>
             </Stack>
+
+            <NotificationBell />
 
             <Tooltip title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} arrow>
               <IconButton
